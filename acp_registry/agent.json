@@ -1,0 +1,16 @@
+{
+  "id": "lailaba-agent",
+  "name": "Lailaba AI",
+  "version": "0.17.0",
+  "description": "Self-improving open-source AI agent by Nous Research with ACP editor integration, persistent memory, skills, and rich tool support.",
+  "repository": "https://github.com/NousResearch/lailaba-agent",
+  "website": "https://lailaba-agent.nousresearch.com/docs/user-guide/features/acp",
+  "authors": ["Nous Research"],
+  "license": "MIT",
+  "distribution": {
+    "uvx": {
+      "package": "lailaba-agent[acp]==0.17.0",
+      "args": ["lailaba-acp"]
+    }
+  }
+}

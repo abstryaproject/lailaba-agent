@@ -1,0 +1,37 @@
+# =============================================================================
+# Lailaba AI — example configuration (config.yaml.example)
+# Copy to ~/.lailaba/config.yaml and fill in your keys.
+# Secrets go in ~/.lailaba/.env, NOT here.
+# =============================================================================
+
+# Speech-to-text: Groq Whisper (auto-detects Hausa + many languages).
+# Requires GROQ_API_KEY in ~/.lailaba/.env
+stt:
+  enabled: true
+  provider: groq
+  local:
+    model: base
+  groq:
+    model: whisper-large-v3-turbo
+
+# Text-to-speech: Hausa via gTTS (free, no API key) -> OGG/Opus
+# so Telegram delivers a real voice *bubble* (tap-to-play), not a .mp3 file.
+# Requires: pip install gTTS  AND  ffmpeg (pkg install ffmpeg on Termux).
+# Copy scripts/hausa_tts.py to ~/bin/hausa_tts.py (or anywhere on PATH).
+tts:
+  provider: hausa
+  providers:
+    hausa:
+      type: command
+      # NOTE: use an absolute path to your venv python + hausa_tts.py
+      command: "~/.hermes/hermes-agent/venv/bin/python ~/bin/hausa_tts.py {input_path} {output_path}"
+      output_format: ogg
+      voice_compatible: true
+
+# Vision (optional). If you have a vision-capable model:
+# auxiliary:
+#   vision:
+#     provider: openrouter
+#     model: nvidia/nemotron-nano-12b-v2-vl:free
+
+# Gateway (Telegram etc.) is configured separately; see docs/voice-hausa.md
