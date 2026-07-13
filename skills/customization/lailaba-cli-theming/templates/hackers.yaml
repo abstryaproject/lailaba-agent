@@ -1,0 +1,43 @@
+name: hackers
+description: Neon green-on-black matrix terminal theme for the CLI
+
+colors:
+  banner_border: "#00ff66"        # Panel border — neon green
+  banner_title: "#00ff88"         # Panel title text — bright neon green
+  banner_accent: "#39ff14"        # Section headers (Available Tools) — pure neon
+  banner_dim: "#1f8f4a"           # Dim/muted text — deep green
+  banner_text: "#9bffcf"          # Body text — mint green
+  ui_accent: "#00ff88"            # General UI accent
+  ui_label: "#39ff14"             # UI labels — neon green
+  ui_ok: "#00ff66"                # Success indicators
+  ui_error: "#ff0055"             # Error indicators — red (kept readable)
+  ui_warn: "#ffd700"             # Warning — amber
+  prompt: "#39ff14"               # Prompt text — neon green
+  input_rule: "#00ff66"           # Input area horizontal rule
+  response_border: "#00ff88"      # Response box border (ANSI)
+  status_bar_bg: "#040806"        # Status bar background — near-black
+  status_bar_text: "#9bffcf"      # Status bar default text — mint green
+  status_bar_strong: "#00ff88"    # Status bar highlighted text — neon green
+  status_bar_dim: "#1f8f4a"       # Status bar separators/muted — deep green
+  status_bar_good: "#00ff66"      # Healthy context usage — green
+  status_bar_warn: "#ffd700"      # Warning context usage — amber
+  status_bar_bad: "#ff8c00"       # High context usage — orange
+  status_bar_critical: "#ff0055"  # Critical context usage — red
+  session_label: "#39ff14"        # Session label color
+  session_border: "#1f8f4a"       # Session ID dim color
+  voice_status_bg: "#040806"      # TUI voice status background
+  selection_bg: "#0a3d1f"         # TUI mouse-selection highlight
+  completion_menu_bg: "#040806"   # Completion menu background
+  completion_menu_current_bg: "#0a3d1f"  # Active completion row
+  completion_menu_meta_bg: "#040806"
+  completion_menu_meta_current_bg: "#0a3d1f"
+
+branding:
+  agent_name: "Lailaba AI"
+  welcome: "Welcome to Lailaba AI :: matrix mode. Type your message or /help for commands."
+  goodbye: "Connection closed. ▓"
+  response_label: " ▓ Lailaba "
+  prompt_symbol: "❯"
+  help_header: ">> Available Commands"
+
+tool_prefix: "┊"
