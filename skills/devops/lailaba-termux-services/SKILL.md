@@ -16,6 +16,19 @@ The bundled `lailaba-services` skill covers only the **gateway** and the **web d
 | Gateway watchdog | self-heal loop | — | tmux `hermes-gateway-watch` |
 | IP watchdog | cronjob, 2-min | — | `ipwatchdog.sh` |
 | sshd | remote shell | 8022 | direct |
+| Public tunnel | Pinggy SSH reverse tunnel -> localhost:8000 | — | tmux `pinggy` (loop) |
+
+## Public reverse tunnel (overcome CGNAT)
+The device sits behind carrier-grade NAT (the "public" IP like `105.113.17.112` is the ISP gateway, NOT a local interface — `ip -4 addr` will NOT show it; the phone's real interface IP is private, e.g. `10.x.x.x`). So `http://<public-ip>:8000` from another browser yields `ERR_CONNECTION_ABORTED`. The fix is a **reverse tunnel** (this session used Pinggy). Pattern that is PERMANENT (self-heals the 60-min free cap):
+1. Write `~/.local/bin/pinggy-keepalive.sh` — a `while true` loop running `ssh -p 443 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R0:localhost:8000 free@a.pinggy.io`, parsing the URL out of the SSH banner into `~/.local/tmp/pinggy-current-url.txt`, then `wait` + restart on exit.
+2. Launch it in a managed tmux session:
+   ```bash
+   tmux new-session -d -s pinggy "bash $HOME/.local/bin/pinggy-keepalive.sh"
+   ```
+3. Wire it into `service-manager.sh` so it auto-starts on boot (guard with `tmux has-session -t pinggy`).
+4. Current URL always lives in `~/.local/tmp/pinggy-current-url.txt` — re-read it rather than trusting a memorized URL (it rotates every 60 min on free tier).
+Verify: `URL=$(cat ~/.local/tmp/pinggy-current-url.txt); curl -s -o /dev/null -w "%{http_code}\n" "$URL/"` → `200`.
+**Subdomain/Pro notes:** free tier = random rotating subdomain, no choice of name, 60-min cap. Persistent chosen subdomain OR a custom domain (e.g. `lailaba.link`) needs **Pinggy Pro** ($3/mo, token as SSH username) + for a custom domain you must also register it. You CANNOT pick a name on free. Details in `references/reverse-tunnel-pinggy.md`.
 
 ## Boot auto-restore chain (Termux:Boot)
 Termux:Boot runs every executable in `~/.termux/boot/` alphabetically:
@@ -62,3 +75,4 @@ cp ipwatchdog.sh ~/.lailaba/scripts/ipwatchdog.sh
 - `references/termux-process-kill.md` — safe `pkill` (bracket trick, avoid self-match), `ss`/`netstat` unreliability, phantom watch-banner handling, kill→launch→verify sequence. **Includes the GOTCHA: bracket trick still self-matches if the target binary appears literally elsewhere in the same command (e.g. inside a tmux launch string).**
 - `references/restore-from-github.md` — safe restore of `~/lailaba-ai` to `origin/main` without losing uncommitted work (`git stash -u` first), plus the inverse "fully remove a mounted service" checklist.
 - `references/boot-verify-probes.md` — exact post-boot verification probes (curl for 8000/9119, `nc` for sshd 8022, `ps`/`tmux ls` for gateway + long-lived procs). Avoids the `000`=down misread on sshd.
+- `references/reverse-tunnel-pinggy.md` — full Pinggy keepalive script + the CGNAT diagnosis (`ERR_CONNECTION_ABORTED` on the ISP gateway IP) + Pro/subdomain rules.

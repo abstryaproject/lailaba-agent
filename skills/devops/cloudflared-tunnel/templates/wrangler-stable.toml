@@ -1,0 +1,12 @@
+name = "lailaba-ai"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Stable free hostname will be:  lailaba-ai.<your-account-sub>.workers.dev
+# (the <your-account-sub> part is auto-assigned by Cloudflare on first deploy)
+kv_namespaces = [
+  { binding = "TUNNEL", id = "REPLACE_WITH_KV_NAMESPACE_ID" }
+]
+
+# Observability (optional, free tier)
+observability = { enabled = false }

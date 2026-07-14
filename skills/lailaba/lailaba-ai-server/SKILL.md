@@ -25,7 +25,9 @@ tmux has-session -t lailaba-server 2>/dev/null || tmux new-session -d -s lailaba
 tmux send-keys -t lailaba-server "cd ~/lailaba-ai && source venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info" Enter
 # verify
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/health   # 200
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/lab/     # 200 (note trailing slash)
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/         # 200 (chat)
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/admin     # 200 (admin page)
+# NOTE: /lab was REMOVED 2026-07-13 → now returns 404 (see "Removing a mounted service")
 ```
 `/lab` returning **307** (no trailing slash) is a normal redirect to `/lab/`, NOT an error.
 
@@ -69,7 +71,15 @@ local error. Disambiguate before acting (full recipe in `references/chat-diagnos
    secrets. The app currently has NO auto-restart; a stopped server = chat broken until
    relaunched (see auto-restore chain / offer watchdog).
 
-## Editing the Lab training catalog (backend-driven)
+## Editing the Lab training catalog (backend-driven) — HISTORICAL
+> **AS OF 2026-07-13 the ENTIRE `/lab` service was REMOVED** from `~/lailaba-ai` (router
+> un-included, `/lab` StaticFiles mount dropped, `LabProgress` DB model dropped,
+> `lab.py`/`lab/*`/`app/templates/lab.html`/`app/static/js/lab.js`/`app/static/css/lab.css`
+> deleted, sidebar `/lab` link replaced with an admin-only `/admin` link). The catalog
+> below NO LONGER EXISTS in the running app — kept only as reference if the feature is ever
+> restored from the git stash `pre-restore-20260713-105227`. To REMOVE a mounted service,
+> follow "Removing a mounted service" below instead.
+
 The Lab is two surfaces: the **Arena** (prompt-injection gamified) and the **Training Lab**
 (14 rooms, one real platform each). Both are server-driven.
 
@@ -92,6 +102,54 @@ The Lab is two surfaces: the **Arena** (prompt-injection gamified) and the **Tra
 **Edit workflow:** change `training_rooms.py` for room content, `lab.py` for routes,
 `app.js`/`index.html`/`lab.css` for UI. See `references/lab-catalog.md` for the data model
 and a verified platform-URL list.
+
+## Removing a mounted service (e.g. `/lab`) — the real procedure
+Fully remove a mounted feature from the app (done 2026-07-13 for `/lab`):
+1. **Un-include the router.** In `app/main.py` remove `from app.api.routes import ... lab`
+   and `app.include_router(lab.router)`.
+2. **Drop the static mount.** Remove any `app.mount("/lab", StaticFiles(...))` block.
+3. **Drop the DB model** if one exists (e.g. `LabProgress` in `app/core/database.py`) — safe
+   to leave the table in the DB; just stop importing/using the model.
+4. **Delete files:** `app/api/routes/lab.py`, `rm -rf lab/`, `app/templates/lab.html`,
+   `app/static/js/lab.js`, `app/static/css/lab.css`, and any `__pycache__`.
+5. **Fix the frontend link.** In `app/templates/chat.html` replace the removed link with the
+   replacement (e.g. admin-only `<a href="/admin" id="admin-link" style="display:none;">`),
+   and update `app/static/js/chat.js` to toggle it by `user?.role === 'admin'`
+   (show for admin, hide otherwise — never render for non-admins).
+6. **Grep for leftovers** (false positives = substrings like "label"/"disable" are fine):
+   `grep -rln "lab" app/ --include=*.py --include=*.html --include=*.js | grep -iv lailaba`
+   and `grep -rn "themeLink\|/lab" app/` → should be empty.
+7. **Restart safe:** `kill <PID>` the old uvicorn (do NOT `tmux send-keys C-c` — that kills
+   the session). Relaunch in a fresh `tmux new-session -d -s lailaba-server` + send-keys.
+   Verify: `python -c "import app.main"` (no broken imports) then curl — `/`→200, `/lab`→404,
+   `/admin`→200, `/api/lab/challenges`→404.
+
+## Exposing :8000 publicly (CGNAT reality + Pinggy tunnel)
+The user's phone is usually on **mobile data behind carrier-grade NAT (CGNAT)**. The "public"
+IP from `api.ipify.org` (e.g. `105.113.x.x`) is the ISP's gateway, NOT the phone — the
+device's real interface IP is a private `10.x`/`172.16+`/`192.168.x`. So
+`http://<public-ip>:8000` from any other device gives **`ERR_CONNECTION_ABORTED`** (reset by
+the CGNAT gateway) — no port-forwarding possible from a phone. Fixes:
+- **Same phone:** `http://localhost:8000/` works (loopback).
+- **Same Wi-Fi:** `http://<phone-LAN-IP>:8000/` only if both on the same private subnet.
+- **Anywhere (internet): reverse tunnel.** Pinggy = one command, uses stock `ssh`:
+  ```bash
+  LOG=~/.local/tmp/pinggy-8000.log; PIDF=~/.local/tmp/pinggy-8000.pid; mkdir -p ~/.local/tmp
+  nohup ssh -p 443 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+    -R0:localhost:8000 free@a.pinggy.io > "$LOG" 2>&1 & echo $! > "$PIDF"
+  sleep 7
+  # CORRECT regex — free-tier domains are .pinggy.net / .pinggy-free.link, NOT .pinggy.link
+  HTTPS=$(grep -oE 'https://[a-z0-9.-]+\.(pinggy\.net|pinggy-free\.link)' "$LOG" | head -1)
+  echo "$HTTPS"   # e.g. https://bcmpu-105-113-17-112.free.pinggy.net
+  curl -s -o /dev/null -w "%{http_code}\n" --max-time 15 "$HTTPS/"
+  ```
+  **PITFALL — the bundled `pinggy-tunnel` skill's regex (`pinggy\.link`) is WRONG** and
+  matches nothing on the free tier; use the `.pinggy.net|pinggy-free.link` pattern above.
+  **Other notes:** free tier = 60-min cap + random URL (changes each restart, don't bookmark);
+  concurrent free tunnels limited to 1/source-IP (a 2nd kills the 1st); a bare HTTP tunnel is
+  open to anyone with the URL — add `b:user:pass` (HTTP basic) or `w:CIDR` (IP allowlist) to
+  the ssh username for a private service. Teardown: `kill $(cat ~/.local/tmp/pinggy-8000.pid)`.
 
 ## Verifying backend/frontend edits (DO THIS — silence ≠ success)
 - **Backend (Python):** uvicorn is launched WITHOUT `--reload`, so a new route/changed
@@ -156,8 +214,20 @@ and a verified platform-URL list.
 - **uvicorn runs WITHOUT `--reload`.** Editing `lab.py` / `training_rooms.py` does NOT hot-load.\n  New routes return `404` until you Ctrl-C + re-send the uvicorn command in tmux `lailaba-server`.\n  A `404` on a just-added endpoint is almost always "old code still running," not a bug.\n- **`node --check` after JS `write_file` rewrites.** The `write_file` tool rewrites whole\n  files and can mangle escaped quotes/regex in one-liner helpers (seen: `escapeHtml`'s\n  arrow fn). Always run `node --check lab/js/app.js` before declaring frontend done.\n- **Login uses `email`, not `username`** (`/api/auth/login` body is `{email,password}`); and\n  you normally don't know admin's password — mint a JWT with `create_access_token` to test\n  auth-gated endpoints instead of guessing creds (recipe in "Verifying backend/frontend edits").
 - **Registration rejects reserved TLDs.** `/api/auth/register` uses an email validator that\n  blocks `@*.local`, `@example`, etc. Use a real-looking address if you must register a test user.
 
+## Frontend page routing & edit pitfalls (the #1 cause of 'my edit didn't show')
+- **`/` serves `index.html`, `/chat` serves `chat.html`** — `app/main.py` ~L122 `FileResponse(index.html)` for `/`, ~L132 `FileResponse(chat.html)` for `/chat`. Both load `/static/css/style.css`. If the user says 'the chat page' / 'mobile view' and you edit `chat.html` but they view `/`, NOTHING changes — `/` is `index.html`. Confirm which route is in play before editing; when unsure, edit BOTH files (same structure + shared CSS). In one session a Stop-button edit to `chat.html` looked 'not applied' for several turns because `/` = `index.html`.
+- **HTML served via `FileResponse` (no Jinja, no template cache)** — static file read per request. Editing `*.html`/`*.css`/`*.js` is LIVE on a browser hard-refresh; **NO uvicorn restart needed** for frontend changes (contrast: backend `.py` imports DO need `pkill`+relaunch). Don't restart the server for a CSS/HTML tweak.
+- **Stale duplicate `chat.html` copies** under `~/storage/lailaba-ai/app/templates/` and `~/storage/storage/lailaba-ai/app/templates/` — SEPARATE dirs (not symlinks), NOT served. Editing them does nothing. Live file is `~/lailaba-ai/app/templates/<file>`. `find ~ -name chat.html` lists dead copies — ignore them.
+- **`/tmp` is read-only** on this Termux build — when fetching served HTML to diff, write to `~/.local/tmp`, never `/tmp`.
+
+## PWA / app-icon maintenance
+- Manifest `app/static/manifest.json` (served at `/manifest.json`, `application/manifest+json`); SW `app/static/sw.js` (served `/sw.js`); registration `app/static/js/pwa.js` (`navigator.serviceWorker.register('/sw.js')`); icons `app/static/icons/`.
+- Regenerate icons/logo from a source image: extract the light mark via PIL luminance threshold → transparent alpha → recolor to theme `#10a37f` → export `icon-192/512.png` + `icon-maskable-192/512.png` (solid green bg + white mark) + `apple-touch-icon.png`(180) + `favicon.png`(64) + `icon-green-*.png`. Update manifest `icons[]` with both `purpose:"any"` and `purpose:"maskable"`. Recipe: `references/pwa-icon-generation.md`.
+- Verify: `curl` each icon → `200 image/png`; `/manifest.json` → `200 application/manifest+json`; `/sw.js` → `200 application/javascript`.
+
 ## References
 - `references/lab-catalog.md` — Lab module data model + how to add external link-out items.
+- `references/pinggy-url-regex-fix.md` — CORRECTION to the bundled `pinggy-tunnel` skill: free-tier URLs are `.pinggy.net`/`.pinggy-free.link` (regex `pinggy\.link` is wrong), plus CGNAT tunnel gotchas.
 - `references/restore-chain.md` — exact boot-script map + ipwatchdog cronjob recreation.
 - `references/chat-diagnostics.md` — `[AI Service Error]` 401 disambiguation (OpenRouter key vs local auth), out-of-band key validation, guest-endpoint live test.
 - Cross-ref: `devops/lailaba-termux-services` `references/termux-process-kill.md` — safe `pkill`, `ss` unreliability, phantom watch-banner handling when restarting the :8000 / :8080 / gateway stack.
